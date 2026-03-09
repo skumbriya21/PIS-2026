@@ -1,0 +1,86 @@
+@startuml
+!theme plain
+skinparam sequenceMessageAlign center
+
+title Бронирование - Ошибка: Таймаут платёжного шлюза
+
+actor "Пользователь" as User
+participant "Web UI" as UI
+participant "Booking API" as API
+database "PostgreSQL" as DB
+participant "Payment Gateway" as Payment
+participant "Scheduler\n(Cron)" as Cron
+participant "Notification Service" as Notify
+
+User -> UI: Выбрать слот, нажать "Забронировать"
+activate UI
+UI -> API: POST /api/bookings
+activate API
+API -> DB: INSERT status: PENDING_PAYMENT
+activate DB
+DB --> API: booking_id: BK-2025-00143
+deactivate DB
+API --> UI: 201 + payment_url
+deactivate API
+UI --> User: Страница оплаты
+deactivate UI
+
+User -> UI: Подтвердить оплату
+activate UI
+UI -> Payment: Charge booking BK-2025-00143
+activate Payment
+
+note right of Payment
+  Платёжный шлюз не отвечает
+  > 30 секунд
+end note
+
+Payment --> UI: **TimeoutException**
+deactivate Payment
+
+UI -> API: POST /bookings/BK-2025-00143/timeout
+activate API
+
+API -> DB: UPDATE status='PAYMENT_PENDING'
+activate DB
+DB --> API: OK
+deactivate DB
+
+API -> Cron: Запланировать проверку\nчерез 1, 5, 15 минут
+activate Cron
+Cron --> API: Scheduled
+deactivate Cron
+
+API --> UI: 202 Accepted\n"Проверяем статус платежа..."
+deactivate API
+
+UI --> User: "Обработка платежа...\nНе закрывайте страницу"
+deactivate UI
+
+Cron -> API: GET /internal/bookings/BK-2025-00143/check-payment
+activate API
+API -> Payment: Query payment status
+activate Payment
+Payment --> API: Status: UNKNOWN/FAILED
+deactivate Payment
+
+API -> DB: UPDATE status='CANCELLED'
+activate DB
+DB --> API: OK
+deactivate DB
+
+API -> DB: UPDATE slot SET status='AVAILABLE'
+activate DB
+DB --> API: OK
+deactivate DB
+
+API -> Notify: Отправить уведомление об отмене
+activate Notify
+Notify --> API: OK
+deactivate Notify
+
+deactivate API
+
+Notify -> User: Email: "Бронирование отменено\nПлатёж не прошёл"
+
+@enduml
