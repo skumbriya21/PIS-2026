@@ -1,0 +1,104 @@
+@startuml
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Бронирование площадки - Happy Path (Online + Оплата)
+
+actor "Пользователь" as User
+participant "Web UI\n(React/Vue)" as UI
+participant "Booking API\n" as API
+participant "Schedule Service" as Schedule
+database "PostgreSQL" as DB
+participant "Payment Gateway\n" as Payment
+participant "Notification Service\n(Email/SMS)" as Notify
+
+User -> UI: 1. Открыть каталог площадок
+activate UI
+UI -> API: GET /api/courts?type=badminton
+activate API
+API -> DB: SELECT courts WHERE type='badminton'
+activate DB
+DB --> API: Список 8 кортов
+deactivate DB
+API --> UI: 200 OK + данные площадок
+deactivate API
+UI --> User: Отображение карточек кортов
+deactivate UI
+
+User -> UI: 2. Выбрать корт #3, дату 15.03, время 18:00
+activate UI
+UI -> API: GET /api/slots?court_id=3&date=2025-03-15
+activate API
+API -> Schedule: Проверка доступности
+activate Schedule
+Schedule --> API: Доступные время [18:00, 19:00, 20:00]
+deactivate Schedule
+API --> UI: 200 OK + время
+deactivate API
+UI --> User: Отображение календаря с временем
+deactivate UI
+
+User -> UI: 3. Нажать "Забронировать с оплатой"
+activate UI
+UI -> API: POST /api/bookings\n{court_id:3, slot:"18:00-19:00", date:"2025-03-15"}
+activate API
+
+API -> Schedule: Блокировка времени (10 мин)
+activate Schedule
+Schedule --> API: OK (slot reserved)
+deactivate Schedule
+
+API -> DB: INSERT booking\nstatus: PENDING_PAYMENT
+activate DB
+DB --> API: booking_id: "BK-2025-00142"
+deactivate DB
+
+API --> UI: 201 Created + booking_id + payment_url
+deactivate API
+UI --> User: Редирект на страницу оплаты
+deactivate UI
+
+User -> UI: 4. Ввести данные карты, подтвердить
+activate UI
+UI -> Payment: Charge(amount: 17BYN, booking_id: BK-2025-00142)
+activate Payment
+Payment -> Payment: Обработка платежа
+Payment --> UI: 200 OK + payment_id: "PAY-789"
+deactivate Payment
+
+UI -> API: POST /api/bookings/BK-2025-00142/confirm\n{payment_id: PAY-789}
+activate API
+
+API -> Payment: Verify payment PAY-789
+activate Payment
+Payment --> API: Status: SUCCESS
+deactivate Payment
+
+API -> DB: UPDATE booking\nSET status='CONFIRMED', payment_id='PAY-789'
+activate DB
+DB --> API: OK
+deactivate DB
+
+API -> Schedule: Подтверждение бронирования слота
+activate Schedule
+Schedule --> API: OK (slot confirmed)
+deactivate Schedule
+
+API -> Notify: Отправить подтверждение\nbooking_id: BK-2025-00142
+activate Notify
+Notify -> Notify: Генерация QR-кода
+Notify --> API: OK (email queued)
+deactivate Notify
+
+API --> UI: 200 OK + booking details
+deactivate API
+UI --> User: Страница успеха с QR-кодом
+deactivate UI
+
+Notify -> User: Email с QR-кодом и деталями
+activate Notify #LightBlue
+Notify --> User: "Ваше бронирование подтверждено!"
+deactivate Notify
+
+@enduml
