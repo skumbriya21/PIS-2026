@@ -1,0 +1,65 @@
+# docker-compose.grpc.yml
+version: '3.8'
+
+services:
+  # gRPC Gateway (REST API)
+  grpc-gateway:
+    build: ./gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - booking-service
+      - court-service
+      - payment-service
+    environment:
+      - BOOKING_SERVICE_GRPC=booking-service:50051
+      - COURT_SERVICE_GRPC=court-service:50051
+      - PAYMENT_SERVICE_GRPC=payment-service:50051
+
+  # Booking Service (gRPC + REST)
+  booking-service:
+    build: ./contexts/booking
+    ports:
+      - "50051:50051"  # gRPC
+      - "8001:8000"    # REST (для отладки)
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@booking-db:5432/booking
+      - COURT_SERVICE_GRPC=court-service:50051
+
+  # Court Service (gRPC)
+  court-service:
+    build: ./contexts/court
+    ports:
+      - "50052:50051"  # gRPC
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@court-db:5432/court
+
+  # Payment Service (gRPC)
+  payment-service:
+    build: ./contexts/payment
+    ports:
+      - "50053:50051"  # gRPC
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@payment-db:5432/payment
+
+  # Databases
+  booking-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: booking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  court-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: court
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  payment-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
