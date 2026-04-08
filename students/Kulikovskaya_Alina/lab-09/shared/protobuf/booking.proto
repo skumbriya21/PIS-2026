@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package booking.v1;
+
+option go_package = "github.com/igraem/api/booking/v1";
+option java_package = "com.igraem.booking.v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Сервис бронирования площадок
+service BookingService {
+    // Создание бронирования
+    rpc CreateBooking(CreateBookingRequest) returns (BookingResponse);
+    
+    // Получение бронирования
+    rpc GetBooking(GetBookingRequest) returns (BookingResponse);
+    
+    // Обновление бронирования
+    rpc UpdateBooking(UpdateBookingRequest) returns (BookingResponse);
+    
+    // Отмена бронирования
+    rpc CancelBooking(CancelBookingRequest) returns (BookingResponse);
+    
+    // Подтверждение оплаты
+    rpc ConfirmPayment(ConfirmPaymentRequest) returns (BookingResponse);
+    
+    // Список бронирований пользователя
+    rpc ListUserBookings(ListUserBookingsRequest) returns (BookingListResponse);
+    
+    // Проверка доступности (streaming - клиент отправляет несколько запросов)
+    rpc CheckAvailability(stream CheckAvailabilityRequest) returns (stream AvailabilityResponse);
+    
+    // Мониторинг статуса бронирования (server streaming)
+    rpc WatchBookingStatus(WatchBookingRequest) returns (stream BookingStatusUpdate);
+}
+
+// Сообщения для бронирования
+
+message CreateBookingRequest {
+    string user_id = 1;
+    string court_id = 2;
+    string slot_date = 3;      // YYYY-MM-DD
+    string start_time = 4;     // HH:MM
+    string end_time = 5;       // HH:MM
+    string payment_method = 6; // "online" | "on_site" | "phone"
+    string notes = 7;
+    string idempotency_key = 8;  // Защита от дублей
+    repeated string player_ids = 9;  // ID других игроков (новое в v1.1)
+}
+
+message GetBookingRequest {
+    string booking_id = 1;
+}
+
+message UpdateBookingRequest {
+    string booking_id = 1;
+    string notes = 2;
+    // Только определённые поля можно обновлять
+}
+
+message CancelBookingRequest {
+    string booking_id = 1;
+    string user_id = 2;      // Для проверки прав
+    string reason = 3;
+    bool force = 4;          // Для администраторов
+}
+
+message ConfirmPaymentRequest {
+    string booking_id = 1;
+    string payment_id = 2;
+    string external_payment_id = 3;  // ID от платёжной системы
+}
+
+message ListUserBookingsRequest {
+    string user_id = 1;
+    common.v1.PaginationRequest pagination = 2;
+    BookingStatusFilter status_filter = 3;
+    string date_from = 4;    // YYYY-MM-DD
+    string date_to = 5;      // YYYY-MM-DD
+}
+
+enum BookingStatusFilter {
+    FILTER_UNSPECIFIED = 0;
+    ALL = 1;
+    ACTIVE = 2;      // pending_payment + reserved + confirmed
+    PAST = 3;        // completed + cancelled + expired
+    UPCOMING = 4;    // confirmed в будущем
+}
+
+message CheckAvailabilityRequest {
+    string court_id = 1;
+    string date = 2;         // YYYY-MM-DD
+    string preferred_time = 3; // HH:MM
+    int32 flexibility_hours = 4;  // ± часов для поиска альтернатив
+}
+
+message AvailabilityResponse {
+    string court_id = 1;
+    string date = 2;
+    bool is_available = 3;
+    repeated common.v1.TimeSlot alternative_slots = 4;  // Если основной занят
+    string next_available_date = 5;  // Следующая дата со свободными слотами
+}
+
+message WatchBookingRequest {
+    string booking_id = 1;
+}
+
+message BookingStatusUpdate {
+    string booking_id = 1;
+    BookingStatus status = 2;
+    string status_message = 3;
+    google.protobuf.Timestamp updated_at = 4;
+    string payment_url = 5;  // Для редиректа на оплату
+}
+
+// Ответы
+
+message BookingResponse {
+    string booking_id = 1;
+    string user_id = 2;
+    string court_id = 3;
+    
+    // Информация о слоте
+    string slot_date = 4;
+    string start_time = 5;
+    string end_time = 6;
+    
+    // Статус
+    BookingStatus status = 7;
+    string status_display = 8;  // Человекочитаемый статус
+    
+    // Оплата
+    common.v1.Money total_amount = 9;
+    string payment_id = 10;
+    string payment_status = 11;
+    
+    // Метаданные
+    string confirmation_code = 12;
+    string notes = 13;
+    bool created_by_admin = 14;
+    
+    // Временные метки
+    google.protobuf.Timestamp created_at = 15;
+    google.protobuf.Timestamp confirmed_at = 16;
+    google.protobuf.Timestamp cancelled_at = 17;
+    
+    // Вычисляемые поля
+    bool can_cancel = 18;
+    bool can_modify = 19;
+    int32 hours_until_start = 20;
+}
+
+message BookingListResponse {
+    repeated BookingResponse bookings = 1;
+    common.v1.PaginationResponse pagination = 2;
+}
+
+// Enums
+
+enum BookingStatus {
+    BOOKING_STATUS_UNSPECIFIED = 0;
+    PENDING_PAYMENT = 1;
+    RESERVED = 2;
+    CONFIRMED = 3;
+    CANCELLED = 4;
+    EXPIRED = 5;
+    COMPLETED = 6;  // Бронирование прошло
+}

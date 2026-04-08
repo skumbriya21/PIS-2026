@@ -1,0 +1,218 @@
+syntax = "proto3";
+
+package court.v1;
+
+option go_package = "github.com/igraem/api/court/v1";
+option java_package = "com.igraem.court.v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Сервис управления площадками
+service CourtService {
+    // CRUD операции
+    rpc GetCourt(GetCourtRequest) returns (CourtResponse);
+    rpc ListCourts(ListCourtsRequest) returns (CourtListResponse);
+    rpc CreateCourt(CreateCourtRequest) returns (CourtResponse);
+    rpc UpdateCourt(UpdateCourtRequest) returns (CourtResponse);
+    rpc DeleteCourt(DeleteCourtRequest) returns (common.v1.Empty);
+    
+    // Расписание и доступность
+    rpc GetSchedule(GetScheduleRequest) returns (ScheduleResponse);
+    rpc UpdateSchedule(UpdateScheduleRequest) returns (ScheduleResponse);
+    
+    // Внутренние операции (для других сервисов)
+    rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse);
+    rpc ReserveSlot(ReserveSlotRequest) returns (ReserveSlotResponse);
+    rpc ReleaseSlot(ReleaseSlotRequest) returns (ReleaseSlotResponse);
+    rpc BatchCheckAvailability(BatchCheckRequest) returns (BatchCheckResponse);
+    
+    // Streaming: обновления расписания в реальном времени
+    rpc WatchScheduleUpdates(WatchScheduleRequest) returns (stream ScheduleUpdate);
+}
+
+// Запросы
+
+message GetCourtRequest {
+    string court_id = 1;
+}
+
+message ListCourtsRequest {
+    CourtType type_filter = 1;
+    bool available_only = 2;  // Только активные площадки
+    common.v1.PaginationRequest pagination = 3;
+}
+
+message CreateCourtRequest {
+    string name = 1;
+    CourtType court_type = 2;
+    string description = 3;
+    double hourly_rate = 4;
+    repeated string amenities = 5;  // "wifi", "shower", "locker_room"
+}
+
+message UpdateCourtRequest {
+    string court_id = 1;
+    string name = 2;
+    string description = 3;
+    bool is_active = 4;
+    double hourly_rate = 5;
+    repeated string amenities = 6;
+}
+
+message DeleteCourtRequest {
+    string court_id = 1;
+    bool force = 2;  // Удалить даже если есть бронирования
+}
+
+message GetScheduleRequest {
+    string court_id = 1;
+    string date = 2;  // YYYY-MM-DD
+}
+
+message UpdateScheduleRequest {
+    string court_id = 1;
+    string date = 2;
+    repeated ScheduleSlot slots = 3;
+    bool is_maintenance_day = 4;
+    string maintenance_reason = 5;
+}
+
+message CheckAvailabilityRequest {
+    string court_id = 1;
+    string date = 2;
+    string start_time = 3;  // HH:MM
+}
+
+message ReserveSlotRequest {
+    string court_id = 1;
+    string date = 2;
+    string start_time = 3;
+    string booking_id = 4;     // Для связи с бронированием
+    int32 ttl_minutes = 5;   // Время жизни резерва
+}
+
+message ReleaseSlotRequest {
+    string court_id = 1;
+    string date = 2;
+    string start_time = 3;
+    string released_by = 4;  // "booking_service" | "admin" | "system"
+}
+
+message BatchCheckRequest {
+    repeated string court_ids = 1;
+    string date = 2;
+    string start_time = 3;
+}
+
+message WatchScheduleRequest {
+    string court_id = 1;
+    string date = 2;
+}
+
+// Ответы
+
+message CourtResponse {
+    string court_id = 1;
+    string name = 2;
+    CourtType court_type = 3;
+    string court_type_display = 4;  // "Бадминтон", "Волейбол" и т.д.
+    string description = 5;
+    bool is_active = 6;
+    common.v1.Money hourly_rate = 7;
+    repeated string amenities = 8;
+    google.protobuf.Timestamp created_at = 9;
+    
+    // Вычисляемые поля
+    int32 total_bookings_count = 10;
+    int32 today_bookings_count = 11;
+    double avg_rating = 12;
+}
+
+message CourtListResponse {
+    repeated CourtResponse courts = 1;
+    common.v1.PaginationResponse pagination = 2;
+}
+
+message ScheduleResponse {
+    string court_id = 1;
+    string date = 2;
+    repeated ScheduleSlot slots = 3;
+    bool is_maintenance_day = 4;
+    string maintenance_reason = 5;
+}
+
+message ScheduleSlot {
+    string start_time = 1;
+    string end_time = 2;
+    SlotStatus status = 3;
+    string booking_id = 4;  // Если забронировано
+    common.v1.Money price = 5;
+}
+
+message CheckAvailabilityResponse {
+    string court_id = 1;
+    string date = 2;
+    string start_time = 3;
+    bool is_available = 4;
+    string unavailable_reason = 5;  // Если занят
+    string next_available_time = 6; // Следующий свободный слот
+}
+
+message ReserveSlotResponse {
+    bool success = 1;
+    string reservation_id = 2;
+    google.protobuf.Timestamp expires_at = 3;
+    string error_message = 4;
+}
+
+message ReleaseSlotResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+message BatchCheckResponse {
+    repeated AvailabilityResult results = 1;
+}
+
+message AvailabilityResult {
+    string court_id = 1;
+    bool is_available = 2;
+    common.v1.Money price = 3;
+}
+
+message ScheduleUpdate {
+    string court_id = 1;
+    string date = 2;
+    ScheduleSlot changed_slot = 3;
+    UpdateType update_type = 4;
+    google.protobuf.Timestamp updated_at = 5;
+}
+
+// Enums
+
+enum CourtType {
+    COURT_TYPE_UNSPECIFIED = 0;
+    VOLLEYBALL = 1;
+    BASKETBALL = 2;
+    BADMINTON = 3;
+    TABLE_TENNIS = 4;
+}
+
+enum SlotStatus {
+    SLOT_STATUS_UNSPECIFIED = 0;
+    AVAILABLE = 1;
+    RESERVED = 2;      // Заблокировано, но не оплачено
+    BOOKED = 3;        // Подтверждено и оплачено
+    MAINTENANCE = 4;   // Техническое обслуживание
+    UNAVAILABLE = 5;   // Нерабочее время
+}
+
+enum UpdateType {
+    UPDATE_UNSPECIFIED = 0;
+    SLOT_RESERVED = 1;
+    SLOT_RELEASED = 2;
+    SLOT_BOOKED = 3;
+    PRICE_CHANGED = 4;
+    MAINTENANCE_ADDED = 5;
+}

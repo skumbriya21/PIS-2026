@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+package payment.v1;
+
+option go_package = "github.com/igraem/api/payment/v1";
+option java_package = "com.igraem.payment.v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Сервис обработки платежей
+service PaymentService {
+    // CRUD операции
+    rpc CreatePayment(CreatePaymentRequest) returns (PaymentResponse);
+    rpc GetPayment(GetPaymentRequest) returns (PaymentResponse);
+    rpc GetPaymentStatus(GetPaymentStatusRequest) returns (PaymentStatusResponse);
+    
+    // Обработка платежа
+    rpc ProcessPayment(ProcessPaymentRequest) returns (PaymentResponse);
+    rpc ConfirmPayment(ConfirmPaymentRequest) returns (PaymentResponse);
+    rpc CancelPayment(CancelPaymentRequest) returns (PaymentResponse);
+    
+    // Возвраты
+    rpc ProcessRefund(ProcessRefundRequest) returns (RefundResponse);
+    rpc GetRefundStatus(GetRefundRequest) returns (RefundResponse);
+    
+    // Вебхуки от платёжных систем
+    rpc ProcessWebhook(ProcessWebhookRequest) returns (ProcessWebhookResponse);
+    
+    // Получение истории платежей
+    rpc ListPayments(ListPaymentsRequest) returns (PaymentListResponse);
+    
+    // Streaming: уведомления о статусе платежа
+    rpc WatchPaymentStatus(WatchPaymentRequest) returns (stream PaymentStatusUpdate);
+}
+
+// Запросы
+
+message CreatePaymentRequest {
+    string booking_id = 1;
+    string user_id = 2;
+    common.v1.Money amount = 3;
+    PaymentMethod method = 4;
+    string description = 5;
+    string return_url = 6;  // URL для редиректа после оплаты
+    string metadata = 7;    // JSON с дополнительными данными
+}
+
+message GetPaymentRequest {
+    string payment_id = 1;
+}
+
+message GetPaymentStatusRequest {
+    string payment_id = 1;
+    string booking_id = 2;  // Альтернативный поиск
+}
+
+message ProcessPaymentRequest {
+    string payment_id = 1;
+    PaymentMethod method = 2;
+    // Данные карты (в реальности - токенизированные)
+    string card_token = 3;
+    string confirmation_code = 4;  // 3D Secure
+}
+
+message ConfirmPaymentRequest {
+    string payment_id = 1;
+    string external_transaction_id = 2;  // ID от банка
+    string confirmation_data = 3;        // Подпись, проверочные данные
+}
+
+message CancelPaymentRequest {
+    string payment_id = 1;
+    string reason = 2;
+    bool force = 3;  // Отмена даже если в обработке
+}
+
+message ProcessRefundRequest {
+    string payment_id = 1;
+    common.v1.Money amount = 2;  // Частичный или полный возврат
+    string reason = 3;
+    string initiated_by = 4;  // "user" | "admin" | "system"
+}
+
+message GetRefundRequest {
+    string refund_id = 1;
+}
+
+message ProcessWebhookRequest {
+    string provider = 1;      // "stripe" | "paypal" | "yookassa" | "epay"
+    bytes payload = 2;        // Raw body
+    string signature = 3;     // Подпись для верификации
+    map<string, string> headers = 4;  // HTTP заголовки
+}
+
+message ListPaymentsRequest {
+    string user_id = 1;
+    string booking_id = 2;
+    PaymentStatus status_filter = 3;
+    common.v1.PaginationRequest pagination = 4;
+    string date_from = 5;
+    string date_to = 6;
+}
+
+message WatchPaymentRequest {
+    string payment_id = 1;
+}
+
+// Ответы
+
+message PaymentResponse {
+    string payment_id = 1;
+    string booking_id = 2;
+    string user_id = 3;
+    
+    common.v1.Money amount = 4;
+    common.v1.Money fee = 5;           // Комиссия платёжной системы
+    common.v1.Money net_amount = 6;    // Сумма за вычетом комиссии
+    
+    PaymentStatus status = 7;
+    PaymentMethod method = 8;
+    
+    string description = 9;
+    string external_payment_id = 10;   // ID во внешней системе
+    
+    // URL для завершения оплаты (3D Secure, редирект)
+    string payment_url = 11;
+    string confirmation_required = 12; // "3ds" | "sms" | "none"
+    
+    google.protobuf.Timestamp created_at = 13;
+    google.protobuf.Timestamp processed_at = 14;
+    google.protobuf.Timestamp expires_at = 15;
+    
+    // История статусов
+    repeated PaymentStatusHistory status_history = 16;
+    
+    // Метаданные
+    string metadata = 17;
+    string error_message = 18;  // Если статус FAILED
+}
+
+message PaymentStatusResponse {
+    string payment_id = 1;
+    PaymentStatus status = 2;
+    string status_message = 3;
+    bool is_final = 4;  // Можно ли ожидать изменений
+    google.protobuf.Timestamp status_updated_at = 5;
+}
+
+message RefundResponse {
+    string refund_id = 1;
+    string payment_id = 2;
+    string booking_id = 3;
+    
+    common.v1.Money original_amount = 4;
+    common.v1.Money refunded_amount = 5;
+    common.v1.Money remaining_amount = 6;  // Для частичных возвратов
+    
+    RefundStatus status = 7;
+    string reason = 8;
+    
+    google.protobuf.Timestamp created_at = 9;
+    google.protobuf.Timestamp processed_at = 10;
+    
+    string external_refund_id = 11;
+    string error_message = 12;
+}
+
+message ProcessWebhookResponse {
+    bool processed = 1;
+    string payment_id = 2;      // Если webhook обновил платёж
+    string action_taken = 3;    // "payment_confirmed" | "payment_failed" | "refund_processed"
+    string message = 4;
+}
+
+message PaymentListResponse {
+    repeated PaymentResponse payments = 1;
+    common.v1.PaginationResponse pagination = 2;
+    common.v1.Money total_amount = 3;  // Сумма всех платежей в списке
+}
+
+message PaymentStatusUpdate {
+    string payment_id = 1;
+    PaymentStatus old_status = 2;
+    PaymentStatus new_status = 3;
+    string message = 4;
+    google.protobuf.Timestamp updated_at = 5;
+    
+    // Дополнительная информация в зависимости от статуса
+    oneof details {
+        PaymentConfirmedDetails confirmed_details = 6;
+        PaymentFailedDetails failed_details = 7;
+        PaymentRefundedDetails refunded_details = 8;
+    }
+}
+
+// Вспомогательные сообщения
+
+message PaymentStatusHistory {
+    PaymentStatus status = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    string reason = 3;
+}
+
+message PaymentConfirmedDetails {
+    string external_transaction_id = 1;
+    common.v1.Money final_amount = 2;
+}
+
+message PaymentFailedDetails {
+    string error_code = 1;
+    string error_message = 2;
+    bool retryable = 3;  // Можно ли повторить
+}
+
+message PaymentRefundedDetails {
+    string refund_id = 1;
+    common.v1.Money refunded_amount = 2;
+}
+
+// Enums
+
+enum PaymentMethod {
+    PAYMENT_METHOD_UNSPECIFIED = 0;
+    CREDIT_CARD = 1;
+    DEBIT_CARD = 2;
+    BANK_TRANSFER = 3;
+    E_WALLET = 4;        // Электронный кошелёк
+    CASH = 5;            // Оплата на месте
+    QR_CODE = 6;         // QR-код (ЕРИП и т.п.)
+}
+
+enum PaymentStatus {
+    PAYMENT_STATUS_UNSPECIFIED = 0;
+    PENDING = 1;         // Ожидает инициации
+    INITIATED = 2;       // Создана сессия оплаты
+    PROCESSING = 3;      // В обработке
+    AWAITING_CONFIRMATION = 4;  // Требуется подтверждение (3DS)
+    SUCCESS = 5;         // Успешно оплачено
+    FAILED = 6;          // Ошибка оплаты
+    CANCELLED = 7;       // Отменено до обработки
+    REFUNDED = 8;        // Полностью возвращено
+    PARTIALLY_REFUNDED = 9;  // Частично возвращено
+    EXPIRED = 10;        // Истекло время на оплату
+}
+
+enum RefundStatus {
+    REFUND_STATUS_UNSPECIFIED = 0;
+    PENDING = 1;
+    PROCESSING = 2;
+    COMPLETED = 3;
+    FAILED = 4;
+}

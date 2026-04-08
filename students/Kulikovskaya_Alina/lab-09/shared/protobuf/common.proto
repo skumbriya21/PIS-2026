@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/igraem/api/common/v1";
+option java_package = "com.igraem.common.v1";
+
+// Общие типы для всех сервисов
+
+message Empty {
+    // Пустое сообщение для методов без параметров
+}
+
+message Money {
+    double amount = 1;
+    string currency = 2;  // ISO 4217: BYN, USD, EUR, RUB
+}
+
+message TimeSlot {
+    string start_time = 1;  // HH:MM format
+    string end_time = 2;    // HH:MM format
+    bool is_available = 3;
+    Money price = 4;
+}
+
+message PaginationRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+}
+
+message PaginationResponse {
+    int32 total_count = 1;
+    int32 current_page = 2;
+    int32 total_pages = 3;
+    bool has_next = 4;
+    bool has_previous = 5;
+}
+
+message ErrorResponse {
+    int32 code = 1;
+    string message = 2;
+    string details = 3;
+    repeated string validation_errors = 4;
+}
+
+enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PENDING = 1;
+    PROCESSING = 2;
+    SUCCESS = 3;
+    FAILED = 4;
+    CANCELLED = 5;
+}

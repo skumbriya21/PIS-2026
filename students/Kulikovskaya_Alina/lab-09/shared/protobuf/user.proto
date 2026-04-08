@@ -1,0 +1,203 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/igraem/api/user/v1";
+option java_package = "com.igraem.user.v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Сервис управления пользователями
+service UserService {
+    // Аутентификация и авторизация
+    rpc Register(RegisterRequest) returns (UserResponse);
+    rpc Login(LoginRequest) returns (AuthResponse);
+    rpc Logout(LogoutRequest) returns (common.v1.Empty);
+    rpc RefreshToken(RefreshTokenRequest) returns (AuthResponse);
+    
+    // Управление профилем
+    rpc GetUser(GetUserRequest) returns (UserResponse);
+    rpc UpdateUser(UpdateUserRequest) returns (UserResponse);
+    rpc DeleteUser(DeleteUserRequest) returns (common.v1.Empty);
+    rpc ChangePassword(ChangePasswordRequest) returns (common.v1.Empty);
+    
+    // Верификация
+    rpc VerifyEmail(VerifyEmailRequest) returns (common.v1.Empty);
+    rpc VerifyPhone(VerifyPhoneRequest) returns (common.v1.Empty);
+    rpc ResendVerification(ResendVerificationRequest) returns (common.v1.Empty);
+    
+    // Роли и права
+    rpc GetUserPermissions(GetUserRequest) returns (PermissionsResponse);
+    rpc UpdateUserRole(UpdateRoleRequest) returns (UserResponse);
+    
+    // Внутренние операции (для других сервисов)
+    rpc ValidateToken(ValidateTokenRequest) returns (TokenValidationResponse);
+    rpc GetUserByEmail(GetByEmailRequest) returns (UserResponse);
+    rpc BatchGetUsers(BatchGetRequest) returns (BatchUserResponse);
+}
+
+// Запросы
+
+message RegisterRequest {
+    string email = 1;
+    string phone = 2;
+    string password = 3;
+    string first_name = 4;
+    string last_name = 5;
+}
+
+message LoginRequest {
+    oneof credential {
+        string email = 1;
+        string phone = 2;
+    }
+    string password = 3;
+    string device_info = 4;  // Для аудита
+}
+
+message LogoutRequest {
+    string token = 1;
+    bool all_devices = 2;  // Выйти со всех устройств
+}
+
+message RefreshTokenRequest {
+    string refresh_token = 1;
+}
+
+message GetUserRequest {
+    string user_id = 1;
+}
+
+message UpdateUserRequest {
+    string user_id = 1;
+    string first_name = 2;
+    string last_name = 3;
+    string phone = 4;
+    string avatar_url = 5;
+    map<string, string> preferences = 6;  // Настройки уведомлений и т.п.
+}
+
+message DeleteUserRequest {
+    string user_id = 1;
+    bool permanent = 2;  // false = soft delete
+    string reason = 3;
+}
+
+message ChangePasswordRequest {
+    string user_id = 1;
+    string old_password = 2;
+    string new_password = 3;
+}
+
+message VerifyEmailRequest {
+    string user_id = 1;
+    string verification_code = 2;
+}
+
+message VerifyPhoneRequest {
+    string user_id = 1;
+    string verification_code = 2;
+}
+
+message ResendVerificationRequest {
+    string user_id = 1;
+    VerificationType type = 2;  // EMAIL или PHONE
+}
+
+message UpdateRoleRequest {
+    string user_id = 1;
+    UserRole new_role = 2;
+    string changed_by = 3;  // ID администратора
+    string reason = 4;
+}
+
+message ValidateTokenRequest {
+    string token = 1;
+}
+
+message GetByEmailRequest {
+    string email = 1;
+}
+
+message BatchGetRequest {
+    repeated string user_ids = 1;
+}
+
+// Ответы
+
+message UserResponse {
+    string user_id = 1;
+    string email = 2;
+    string phone = 3;
+    string first_name = 4;
+    string last_name = 5;
+    string full_name = 6;  // Вычисляемое
+    
+    UserStatus status = 7;
+    UserRole role = 8;
+    
+    bool email_verified = 9;
+    bool phone_verified = 10;
+    
+    string avatar_url = 11;
+    google.protobuf.Timestamp created_at = 12;
+    google.protobuf.Timestamp last_login_at = 13;
+    
+    map<string, string> preferences = 14;
+}
+
+message AuthResponse {
+    string access_token = 1;
+    string refresh_token = 2;
+    int32 expires_in = 3;  // Секунд
+    string token_type = 4;  // "Bearer"
+    
+    UserResponse user = 5;
+}
+
+message PermissionsResponse {
+    string user_id = 1;
+    UserRole role = 2;
+    repeated string permissions = 3;  // ["bookings.create", "courts.manage", ...]
+    repeated string allowed_court_types = 4;  // Для ограниченного доступа
+}
+
+message TokenValidationResponse {
+    bool valid = 1;
+    string user_id = 2;
+    UserRole role = 3;
+    repeated string permissions = 4;
+    google.protobuf.Timestamp expires_at = 5;
+}
+
+message BatchUserResponse {
+    repeated UserResponse users = 1;
+    repeated string not_found_ids = 2;  // ID, которые не найдены
+}
+
+// Enums
+
+enum UserStatus {
+    USER_STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    INACTIVE = 2;      // Не подтверждён email
+    SUSPENDED = 3;     // Временная блокировка
+    BANNED = 4;        // Перманентный бан
+    DELETED = 5;       // Soft delete
+}
+
+enum UserRole {
+    USER_ROLE_UNSPECIFIED = 0;
+    CUSTOMER = 1;      // Обычный пользователь
+    PREMIUM = 2;       // Премиум-подписчик
+    MANAGER = 3;       // Менеджер площадки
+    ADMIN = 4;         // Администратор
+    SUPER_ADMIN = 5;   // Полный доступ
+}
+
+enum VerificationType {
+    VERIFICATION_UNSPECIFIED = 0;
+    EMAIL = 1;
+    PHONE = 2;
+}
